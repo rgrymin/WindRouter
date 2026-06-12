@@ -20,14 +20,14 @@ class GPXViewerApp:
         self.root.geometry("1550x950")
 
         # Route file definitions
-        self.vmg_files = [f"scampi_vmg_start_{i}.gpx" for i in range(1, 5)]
-        self.fastest_files = [f"fastest_path_start_{i}.gpx" for i in range(1, 5)]
-        self.fastest_3d_files = [f"fastest_path_3d_start_{i}.gpx" for i in range(1, 5)]
-        
+        self.vmg_files = [f"output/scampi_vmg_start_{i}.gpx" for i in range(1, 5)]
+        self.fastest_files = [f"output/fastest_path_start_{i}.gpx" for i in range(1, 5)]
+        self.fastest_3d_files = [f"output/fastest_path_3d_start_{i}.gpx" for i in range(1, 5)]
+
         # Additional files
-        self.forbidden_file = "forbidden_areas.gpx"
-        self.not_recommended_file = "not_recommended.gpx"
-        self.graph_file = "sailing_graph.json"
+        self.forbidden_file = "output/forbidden_areas.gpx"
+        self.not_recommended_file = "output/not_recommended.gpx"
+        self.graph_file = "output/sailing_graph.json"
         
         # Initialize modification times (mtimes)
         self.last_vmg_mtimes = [0] * 4

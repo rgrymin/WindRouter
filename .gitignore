@@ -2,5 +2,5 @@ __pycache__/
 *.pyc
 *.pyo
 .coverage
-*.grb
-*.grb2
+data/*.grb
+data/*.grb2

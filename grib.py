@@ -512,54 +512,54 @@ def analyze_grib_performance(file_path):
     print(f"Dimensions: S-N: {sn_nm:.2f} nm, E-W: {ew_nm:.2f} nm\n" + "-"*50); grbs.close()
 
 if __name__ == "__main__":
-    file_name = "test.grb2"
+    file_name = "data/test.grb2"
     analyze_grib_performance(file_name)
     weather_cache = load_grib_to_memory(file_name)
-    
+
     if weather_cache:
         lats, lons = weather_cache['lats'], weather_cache['lons']
         start_lat, start_lon = 53.25, 2.6
-        
+
         target_lat = lats.max()
         target_lon = (lons.min() + lons.max()) / 2.0
-        
-        base_start_time = weather_cache['dates'][0]
-        
-        if os.path.exists("graph_log.txt"): os.remove("graph_log.txt")
 
-        save_to_gpx(identify_weather_danger_zones(weather_cache, 40.0), "forbidden_areas.gpx", "Wind >40kt")
-        save_to_gpx(identify_weather_danger_zones(weather_cache, 30.0, 40.0), "caution_areas.gpx", "Wind 30-40kt")
+        base_start_time = weather_cache['dates'][0]
+
+        if os.path.exists("output/graph_log.txt"): os.remove("output/graph_log.txt")
+
+        save_to_gpx(identify_weather_danger_zones(weather_cache, 40.0), "output/forbidden_areas.gpx", "Wind >40kt")
+        save_to_gpx(identify_weather_danger_zones(weather_cache, 30.0, 40.0), "output/caution_areas.gpx", "Wind 30-40kt")
         safe_map = identify_safe_sailing_areas(weather_cache, 30.0)
-        
+
         print("\n--- STARTING SIMULATION OF 4 ROUTES EVERY 5 HOURS ---")
 
         for i in range(1, 5):
             current_departure_time = base_start_time + timedelta(hours=(i-1)*5)
             print(f"\n>>> SIMULATION NO {i} (Departure: {current_departure_time.strftime('%Y-%m-%d %H:%M')}) <<<")
-            
+
             # --- DIJKSTRA 2D (STATIC SNAPSHOT) ---
-            nodes, adj, start_idx = generate_reachable_graph(weather_cache, safe_map, start_lat, start_lon, target_lat, target_lon, current_departure_time)
+            nodes, adj, start_idx = generate_reachable_graph(weather_cache, safe_map, start_lat, start_lon, target_lat, target_lon, current_departure_time, log_file="output/graph_log.txt")
             if nodes:
                 fastest_path_2d, d_cost_2d = find_shortest_path_dijkstra(start_idx, adj, safe_map, target_lat, target_lon)
                 if fastest_path_2d:
                     for idx, p in enumerate(fastest_path_2d):
                         p['time'] = current_departure_time + timedelta(hours=(idx * d_cost_2d / len(fastest_path_2d)))
-                    save_to_gpx(fastest_path_2d, f"fastest_path_start_{i}.gpx", f"Dijkstra 2D Route {i}")
-                    save_route_detailed_log(fastest_path_2d, weather_cache, f"log_dijkstra_start_{i}.txt", f"Dijkstra 2D Route {i}")
+                    save_to_gpx(fastest_path_2d, f"output/fastest_path_start_{i}.gpx", f"Dijkstra 2D Route {i}")
+                    save_route_detailed_log(fastest_path_2d, weather_cache, f"output/log_dijkstra_start_{i}.txt", f"Dijkstra 2D Route {i}")
                     print_route_summary(fastest_path_2d, f"DIJKSTRA 2D (START {i})", d_cost_2d)
 
             # --- DIJKSTRA 3D (DYNAMIC WEATHER) ---
             fastest_path_3d, d_cost_3d = find_shortest_path_dijkstra_3d(start_idx, safe_map, target_lat, target_lon, current_departure_time, weather_cache)
             if fastest_path_3d:
-                save_to_gpx(fastest_path_3d, f"fastest_path_3d_start_{i}.gpx", f"Dijkstra 3D Route {i}")
-                save_route_detailed_log(fastest_path_3d, weather_cache, f"log_dijkstra_3d_start_{i}.txt", f"Dijkstra 3D Route {i}")
+                save_to_gpx(fastest_path_3d, f"output/fastest_path_3d_start_{i}.gpx", f"Dijkstra 3D Route {i}")
+                save_route_detailed_log(fastest_path_3d, weather_cache, f"output/log_dijkstra_3d_start_{i}.txt", f"Dijkstra 3D Route {i}")
                 print_route_summary(fastest_path_3d, f"DIJKSTRA 3D (START {i})", d_cost_3d)
 
             # --- VMG ALGORITHM (DYNAMIC WEATHER) ---
             vmg_pts = simulate_vmg_route(weather_cache, start_lat, start_lon, target_lat, target_lon, current_departure_time, 10.0)
             if vmg_pts:
-                save_to_gpx(vmg_pts, f"scampi_vmg_start_{i}.gpx", f"VMG Route {i}")
-                save_route_detailed_log(vmg_pts, weather_cache, f"log_vmg_start_{i}.txt", f"VMG Route {i}")
+                save_to_gpx(vmg_pts, f"output/scampi_vmg_start_{i}.gpx", f"VMG Route {i}")
+                save_route_detailed_log(vmg_pts, weather_cache, f"output/log_vmg_start_{i}.txt", f"VMG Route {i}")
                 print_route_summary(vmg_pts, f"VMG (START {i})")
 
         print("\nSimulations complete. Generated GPX files and detailed TXT logs.")

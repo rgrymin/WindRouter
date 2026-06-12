@@ -10,14 +10,19 @@ A Python weather routing tool for the **Scampi 30** yacht. Reads GRIB forecast f
 WindRouter/
 ├── grib.py            ← routing engine (polars, routing algorithms, I/O)
 ├── Visualiser.py      ← Tkinter map viewer
-├── tests/
-│   ├── conftest.py            ← shared fixtures (no real GRIB files needed)
-│   ├── test_unit.py           ← unit tests with known expected values
-│   ├── test_characterization.py  ← pins current behaviour including known bugs
-│   ├── test_regression.py     ← xfail tests: correct behaviour after bug fixes
-│   └── test_contracts.py      ← I/O round-trip between engine and Visualiser
-├── REQUIREMENTS.md    ← bug list (B-01 … B-30) and feature requirements
-└── REFACTORING_PLAN.md ← staged plan for fixing bugs and splitting the codebase
+├── data/              ← GRIB forecast files (gitignored)
+├── output/            ← generated GPX, logs, JSON (gitignored)
+├── docs/
+│   ├── REQUIREMENTS.md         ← bug list (B-01 … B-30) and feature requirements
+│   ├── REFACTORING_PLAN.md     ← staged plan for fixing bugs and splitting the codebase
+│   ├── Technical Documentation Weather Router.md
+│   └── Project Documentation Map Display.md
+└── tests/
+    ├── conftest.py            ← shared fixtures (no real GRIB files needed)
+    ├── test_unit.py           ← unit tests with known expected values
+    ├── test_characterization.py  ← pins current behaviour including known bugs
+    ├── test_regression.py     ← xfail tests: correct behaviour after bug fixes
+    └── test_contracts.py      ← I/O round-trip between engine and Visualiser
 ```
 
 ---
@@ -29,7 +34,7 @@ WindRouter/
 python grib.py
 ```
 
-Hard-coded defaults in `__main__`: start/target coordinates, GRIB filename (`test.grb2`), output paths. Edit these directly until the CLI is added (Stage 6 of the refactoring plan).
+Hard-coded defaults in `__main__`: start/target coordinates, GRIB filename (`data/test.grb2`), output paths. Edit these directly until the CLI is added (Stage 6 of the refactoring plan).
 
 ---
 
@@ -104,7 +109,7 @@ pytest tests/test_contracts.py                   # I/O contract tests
 
 ## Known bugs
 
-30 documented bugs are listed with locations, descriptions, and affected requirements in `REQUIREMENTS.md`. The staged fix plan is in `REFACTORING_PLAN.md`.
+30 documented bugs are listed with locations, descriptions, and affected requirements in `docs/REQUIREMENTS.md`. The staged fix plan is in `docs/REFACTORING_PLAN.md`.
 
 ---
 
