@@ -895,12 +895,12 @@ class TestSaveGraphToJson:
         assert isinstance(data, dict)
 
     def test_top_level_keys(self, tmp_path):
-        """REQ-10: JSON has exactly three top-level keys: metadata, nodes, edges."""
+        """REQ-10: JSON has exactly three top-level keys: metadata, nodes, graph."""
         out = str(tmp_path / "graph.json")
         save_graph_to_json(self.nodes, self.adj, self.spm, filename=out)
         with open(out) as f:
             data = json.load(f)
-        assert set(data.keys()) == {"metadata", "nodes", "edges"}
+        assert set(data.keys()) == {"metadata", "nodes", "graph"}
 
     def test_node_keys_are_row_col_strings(self, tmp_path):
         """REQ-10: node keys are strings in format 'row,col'."""
@@ -1495,7 +1495,7 @@ class TestSaveGraphToJsonGaps:
         save_graph_to_json(nodes, adj, spm, json_path)
 
         data = json.loads(open(json_path).read())
-        edges_00 = data["edges"]["0,0"]
+        edges_00 = data["graph"]["0,0"]
         assert len(edges_00) == 1
         assert edges_00[0]["target"] == "0,1", "Target must be serialised as 'r,c' string"
         assert edges_00[0]["cost"] == pytest.approx(1.2346, abs=1e-4), (
@@ -1509,7 +1509,7 @@ class TestSaveGraphToJsonGaps:
 
         data = json.loads(open(json_path).read())
         assert data["nodes"] == {}
-        assert data["edges"] == {}
+        assert data["graph"] == {}
         assert data["metadata"]["nodes"] == 0
 
     def test_node_values_contain_lat_lon_not_max_speed(self, tmp_path):

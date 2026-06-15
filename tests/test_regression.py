@@ -91,6 +91,7 @@ class TestBugFixes:
             "B-08: both zone points must be readable as waypoints by gpxpy"
         )
 
+
     def test_b01_graph_json_uses_graph_key(self, tmp_path):
         """After B-01 is fixed, the JSON key must be 'graph' so Visualiser can read it."""
         nodes = {(0, 0), (0, 1)}

@@ -149,15 +149,14 @@ class TestSaveGraphToJsonCharacterization:
         self.adj = make_full_adjacency(self.spm, cost=1.5)
         self.nodes = set(self.spm.keys())
 
-    def test_b01_engine_writes_edges_key_not_graph(self, tmp_path):
-        """B-01: engine writes adjacency under key 'edges', viewer reads 'graph' — mismatch.
-        This test characterizes the current (broken) behavior."""
+    def test_b01_engine_writes_graph_key(self, tmp_path):
+        """B-01 fixed: engine writes adjacency under key 'graph', matching Visualiser."""
         out = str(tmp_path / "graph.json")
         save_graph_to_json(self.nodes, self.adj, self.spm, filename=out)
         with open(out) as f:
             data = json.load(f)
-        assert "edges" in data, "B-01: engine writes key 'edges'"
-        assert "graph" not in data, "B-01: engine does NOT write key 'graph' (viewer expects this)"
+        assert "graph" in data, "B-01 fixed: engine writes key 'graph'"
+        assert "edges" not in data, "B-01 fixed: 'edges' key removed"
 
 
 # ---------------------------------------------------------------------------
@@ -432,9 +431,8 @@ class TestIOContractsCharacterization:
             "Visualiser reads waypoints, not track segments"
         )
 
-    def test_b01_engine_writes_edges_key_not_graph(self, tmp_path):
-        """B-01 current state: save_graph_to_json writes key 'edges'.
-        Visualiser reads data.get('graph', {}) → always returns {} → grid never drawn."""
+    def test_b01_engine_writes_graph_key(self, tmp_path):
+        """B-01 fixed: save_graph_to_json writes key 'graph' readable by Visualiser."""
         nodes = {(0, 0), (0, 1), (1, 0)}
         adj = {
             (0, 0): [{"target": (0, 1), "cost": 1.0}, {"target": (1, 0), "cost": 1.4}],
@@ -452,11 +450,11 @@ class TestIOContractsCharacterization:
         with open(json_path) as fh:
             data = json.load(fh)
 
-        assert "edges" in data, "B-01 current state: engine writes 'edges' key"
-        assert "graph" not in data, "B-01 current state: 'graph' key absent — Visualiser sees empty adj"
+        assert "graph" in data, "B-01 fixed: engine writes 'graph' key"
+        assert "edges" not in data, "B-01 fixed: 'edges' key removed"
 
-    def test_b01_visualiser_simulation_sees_zero_edges(self, tmp_path):
-        """B-01: simulating load_sailing_graph with current key gives edges_drawn == 0."""
+    def test_b01_visualiser_simulation_sees_correct_edges(self, tmp_path):
+        """B-01 fixed: Visualiser reads 'graph' key and gets the correct edge count."""
         nodes = {(0, 0), (0, 1)}
         adj = {
             (0, 0): [{"target": (0, 1), "cost": 0.5}],
@@ -472,13 +470,10 @@ class TestIOContractsCharacterization:
         with open(json_path) as fh:
             data = json.load(fh)
 
-        # Simulate exactly what load_sailing_graph does:
         visualiser_adj = data.get("graph", {})
         edges_drawn = sum(len(targets) for targets in visualiser_adj.values())
 
-        assert edges_drawn == 0, (
-            "B-01: Visualiser reads 'graph' key which is absent → 0 edges drawn"
-        )
+        assert edges_drawn == 1, "B-01 fixed: Visualiser reads 'graph' key → 1 edge drawn"
 
 
 # ---------------------------------------------------------------------------

@@ -422,7 +422,7 @@ def save_graph_to_json(reachable_nodes, adjacency_map, safe_points_map, filename
     data = {
         "metadata": {"nodes": len(reachable_nodes), "unit": "hours", "timestamp": datetime.now().isoformat()},
         "nodes": {f"{r},{c}": {"lat": safe_points_map[(r, c)]["lat"], "lon": safe_points_map[(r, c)]["lon"]} for r, c in reachable_nodes},
-        "edges": {f"{r},{c}": [{"target": f"{e['target'][0]},{e['target'][1]}", "cost": round(e['cost'], 4)} for e in edges] for (r, c), edges in adjacency_map.items()}
+        "graph": {f"{r},{c}": [{"target": f"{e['target'][0]},{e['target'][1]}", "cost": round(e['cost'], 4)} for e in edges] for (r, c), edges in adjacency_map.items()}
     }
     with open(filename, 'w', encoding='utf-8') as f: json.dump(data, f, indent=4)
 
@@ -557,6 +557,7 @@ if __name__ == "__main__":
             # --- DIJKSTRA 2D (STATIC SNAPSHOT) ---
             nodes, adj, start_idx = generate_reachable_graph(weather_cache, safe_map, start_lat, start_lon, target_lat, target_lon, current_departure_time, log_file="output/graph_log.txt")
             if nodes:
+                save_graph_to_json(nodes, adj, safe_map, "output/sailing_graph.json")
                 fastest_path_2d, d_cost_2d = find_shortest_path_dijkstra(start_idx, adj, safe_map, target_lat, target_lon)
                 if fastest_path_2d:
                     for idx, p in enumerate(fastest_path_2d):
