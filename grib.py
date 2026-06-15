@@ -268,11 +268,14 @@ def find_shortest_path_dijkstra(start_node, adjacency_map, safe_points_map, targ
             for edge in adjacency_map[curr_node]:
                 neighbor, weight = edge['target'], edge['cost']
                 dist = curr_dist + weight
+                if neighbor not in distances:
+                    distances[neighbor] = float('inf')
+                    predecessors[neighbor] = None
                 if dist < distances[neighbor]:
                     distances[neighbor], predecessors[neighbor] = dist, curr_node
                     heapq.heappush(pq, (dist, neighbor))
                 
-    reachable_and_visited = [n for n in adjacency_map.keys() if distances[n] != float('inf')]
+    reachable_and_visited = [n for n in distances if distances[n] != float('inf')]
     if not reachable_and_visited: 
         return [], 0
     

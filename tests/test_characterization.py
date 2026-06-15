@@ -236,23 +236,17 @@ class TestDijkstra2DCharacterization:
             f"C-10: expected {expected_last}, got {last_time}"
         )
 
-    def test_neighbor_not_in_distances_raises_keyerror(self):
-        """`distances[neighbor]` raises KeyError when neighbor is not in adj.keys().
-        distances is initialized only from adj.keys() = {(0,0)}.
-        When (0,0) is expanded, neighbor (0,1) is found — but (0,1) is not in distances
-        because it has no entry in adj, so `distances[(0,1)]` raises KeyError.
-        This is a latent bug: generate_reachable_graph only adds nodes reachable from
-        start as adj keys, so in practice neighbor is always in adj — but it's not
-        enforced by the code."""
+    def test_neighbor_not_in_distances_handled_lazily(self):
+        """B-24 fixed: leaf nodes not in adj.keys() are lazily initialised in distances."""
         adj = {
             (0, 0): [{"target": (0, 1), "cost": 1.0}],
             # (0,1) intentionally absent — neighbor but not a source node in adj
         }
         spm = make_safe_points_map(self.LATS[:2], self.LONS[:2])
-        with pytest.raises(KeyError):
-            find_shortest_path_dijkstra(
-                (0, 0), adj, spm, 53.25, 2.25,
-            )
+        path, cost = find_shortest_path_dijkstra(
+            (0, 0), adj, spm, 53.25, 2.25,
+        )
+        assert isinstance(path, list)
 
 
 # ---------------------------------------------------------------------------

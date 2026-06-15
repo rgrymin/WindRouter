@@ -131,7 +131,6 @@ class TestBugFixes:
             "Fix: use Haversine with modular lon diff."
         )
 
-    @pytest.mark.xfail(strict=True, reason="B-24: distances pre-seeded only from adjacency_map keys — leaf nodes raise KeyError")
     def test_b24_dijkstra_2d_handles_leaf_nodes_without_keyerror(self):
         """After B-24 is fixed, a leaf node (target-only, no outgoing edges) must not raise KeyError."""
         # (0,1) is a target node but has no entry as a source in adj
