@@ -1666,6 +1666,109 @@ class TestPolarsGaps:
         assert isinstance(result, (int, float, np.floating))
 
 
+class TestUKeyLowercaseFallback:
+    """B-22 related: identify_weather_danger_zones and identify_safe_sailing_areas
+    must handle both uppercase and lowercase U key from the GRIB file."""
+
+    def _make_lowercase_u_cache(self):
+        cache = make_weather_cache(u_speed=5.0, v_speed=0.0)
+        for dt in cache["data"]:
+            d = cache["data"][dt]
+            if "10 metre U wind component" in d:
+                d["10 metre u wind component"] = d.pop("10 metre U wind component")
+        return cache
+
+    def test_danger_zones_with_lowercase_u_key(self):
+        """identify_weather_danger_zones must work with lowercase '10 metre u wind component'."""
+        cache = self._make_lowercase_u_cache()
+        zones = identify_weather_danger_zones(cache, min_threshold=40.0)
+        assert isinstance(zones, list)
+
+    def test_safe_areas_with_lowercase_u_key(self):
+        """identify_safe_sailing_areas must work with lowercase '10 metre u wind component'."""
+        cache = self._make_lowercase_u_cache()
+        spm = identify_safe_sailing_areas(cache, max_wind_threshold=30.0)
+        assert isinstance(spm, dict)
+        assert len(spm) == 16  # all 16 cells safe at ~9.7 kt
+
+    def test_safe_areas_uppercase_and_lowercase_give_same_result(self):
+        """Uppercase and lowercase U key must produce identical safe-area sets."""
+        cache_upper = make_weather_cache(u_speed=5.0, v_speed=0.0)
+        cache_lower = self._make_lowercase_u_cache()
+        spm_upper = identify_safe_sailing_areas(cache_upper, max_wind_threshold=30.0)
+        spm_lower = identify_safe_sailing_areas(cache_lower, max_wind_threshold=30.0)
+        assert set(spm_upper.keys()) == set(spm_lower.keys())
+
+    def test_b22_get_weather_from_cache_with_lowercase_u_key_returns_wind_data(self):
+        """Core B-22 regression: get_weather_from_cache must not return None when
+        the cache contains only lowercase '10 metre u wind component'.
+
+        With the bug (no fallback), get_weather_from_cache returns None because
+        the key lookup fails silently — u is None → early return None.
+        After the fix the function tries the lowercase key and returns a dict
+        with 'wind_u' and 'wind_v'.
+        """
+        from grib import get_weather_from_cache
+        cache = self._make_lowercase_u_cache()
+        t0 = cache["dates"][0]
+        lats, lons = cache["lats"], cache["lons"]
+        mid_r, mid_c = lats.shape[0] // 2, lons.shape[1] // 2
+        lat, lon = float(lats[mid_r, mid_c]), float(lons[mid_r, mid_c])
+
+        result = get_weather_from_cache(cache, lat, lon, t0)
+
+        assert result is not None, (
+            "B-22: get_weather_from_cache returned None for lowercase U key — "
+            "the case-insensitive fallback is missing"
+        )
+        assert "wind_u" in result, "B-22: result must contain 'wind_u'"
+        assert "wind_v" in result, "B-22: result must contain 'wind_v'"
+
+    def test_b22_get_weather_returns_wind_data_for_lowercase_v_key_also(self):
+        """B-22: get_weather_from_cache must handle lowercase V key too."""
+        from grib import get_weather_from_cache
+        cache = make_weather_cache(u_speed=5.0, v_speed=3.0)
+        for dt in cache["data"]:
+            d = cache["data"][dt]
+            for old_key, new_key in [
+                ("10 metre U wind component", "10 metre u wind component"),
+                ("10 metre V wind component", "10 metre v wind component"),
+            ]:
+                if old_key in d:
+                    d[new_key] = d.pop(old_key)
+        t0 = cache["dates"][0]
+        lats, lons = cache["lats"], cache["lons"]
+        mid_r, mid_c = lats.shape[0] // 2, lons.shape[1] // 2
+        lat, lon = float(lats[mid_r, mid_c]), float(lons[mid_r, mid_c])
+
+        result = get_weather_from_cache(cache, lat, lon, t0)
+
+        assert result is not None, (
+            "B-22: get_weather_from_cache returned None for lowercase V key — "
+            "the V-key case-insensitive fallback is missing"
+        )
+        assert "wind_v" in result
+
+    def test_b22_get_weather_returns_none_when_both_keys_absent(self):
+        """B-22 boundary: get_weather_from_cache must return None when neither
+        uppercase nor lowercase key exists — not crash with KeyError."""
+        from grib import get_weather_from_cache
+        cache = make_weather_cache(u_speed=5.0, v_speed=0.0)
+        for dt in cache["data"]:
+            d = cache["data"][dt]
+            d.pop("10 metre U wind component", None)
+            d.pop("10 metre u wind component", None)
+        t0 = cache["dates"][0]
+        lats, lons = cache["lats"], cache["lons"]
+        lat, lon = float(lats[0, 0]), float(lons[0, 0])
+
+        result = get_weather_from_cache(cache, lat, lon, t0)
+        assert result is None, (
+            "B-22: get_weather_from_cache must return None (not crash) "
+            "when both uppercase and lowercase U keys are absent"
+        )
+
+
 class TestIOContractsUnit:
     """B-02: save_graph_to_json is callable and produces valid JSON."""
 

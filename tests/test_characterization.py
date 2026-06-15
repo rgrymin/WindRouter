@@ -173,15 +173,14 @@ class TestGetWeatherEdgeCases:
         with pytest.raises((ValueError, TypeError)):
             get_weather_from_cache(cache, 53.0, 2.0, datetime(2026, 4, 20))
 
-    def test_b17_missing_v_component_raises(self):
-        """B-17: get_weather_from_cache crashes when V-component key is absent."""
+    def test_b17_missing_v_component_returns_none(self):
+        """B-22 fixed: get_weather_from_cache returns None when V-component key is absent."""
         cache = make_weather_cache()
-        # Remove V component from all timesteps
         for dt in cache["dates"]:
             cache["data"][dt].pop("10 metre v wind component", None)
             cache["data"][dt].pop("10 metre V wind component", None)
-        with pytest.raises((TypeError, KeyError)):
-            get_weather_from_cache(cache, 53.0, 2.0, cache["dates"][0])
+        result = get_weather_from_cache(cache, 53.0, 2.0, cache["dates"][0])
+        assert result is None
 
     def test_b17_missing_v_safe_areas_silently_skips(self):
         """B-17: identify_safe_sailing_areas silently skips timesteps with missing V.

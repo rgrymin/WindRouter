@@ -89,10 +89,15 @@ def get_weather_from_cache(cache, target_lat, target_lon, target_time):
     min_idx = np.unravel_index(np.argmin(dist_sq), dist_sq.shape)
     data_at_time = cache['data'][closest_date]
     
-    u_val = data_at_time.get('10 metre U wind component')[min_idx]
+    u_key = '10 metre u wind component' if '10 metre u wind component' in data_at_time else '10 metre U wind component'
+    u = data_at_time.get(u_key)
     v_key = '10 metre v wind component' if '10 metre v wind component' in data_at_time else '10 metre V wind component'
-    v_val = data_at_time.get(v_key)[min_idx]
-    
+    v = data_at_time.get(v_key)
+    if u is None or v is None:
+        return None
+    u_val = u[min_idx]
+    v_val = v[min_idx]
+
     return {
         'meta': {
             'actual_lat': lats[min_idx], 
@@ -130,7 +135,8 @@ def identify_weather_danger_zones(cache, min_threshold, max_threshold=float('inf
     
     for dt in dates:
         data_at_time = cache['data'][dt]
-        u = data_at_time.get('10 metre U wind component')
+        u_key = '10 metre u wind component' if '10 metre u wind component' in data_at_time else '10 metre U wind component'
+        u = data_at_time.get(u_key)
         v_key = '10 metre v wind component' if '10 metre v wind component' in data_at_time else '10 metre V wind component'
         v = data_at_time.get(v_key)
         if u is not None and v is not None:
@@ -151,7 +157,8 @@ def identify_safe_sailing_areas(cache, max_wind_threshold=30.0):
     max_observed_speed = np.zeros(lats.shape)
     for dt in dates:
         data_at_time = cache['data'][dt]
-        u = data_at_time.get('10 metre U wind component')
+        u_key = '10 metre u wind component' if '10 metre u wind component' in data_at_time else '10 metre U wind component'
+        u = data_at_time.get(u_key)
         v_key = '10 metre v wind component' if '10 metre v wind component' in data_at_time else '10 metre V wind component'
         v = data_at_time.get(v_key)
         if u is not None and v is not None:
