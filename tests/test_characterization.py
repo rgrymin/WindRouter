@@ -293,9 +293,8 @@ class TestLoadGribToMemoryCharacterization:
         grbs.__iter__ = MagicMock(side_effect=lambda: iter(messages))
         return grbs
 
-    def test_grbs_close_not_called_on_iteration_exception(self, tmp_path, monkeypatch):
-        """B-18: grbs.close() is inside try block with no finally — if iteration raises,
-        close() is skipped and the file handle leaks. This is a known bug."""
+    def test_grbs_close_called_even_on_iteration_exception(self, tmp_path, monkeypatch):
+        """B-18 fixed: grbs.close() is now in a finally block — called even when iteration raises."""
         dummy_file = tmp_path / "test.grib"
         dummy_file.write_bytes(b"")
 
@@ -308,7 +307,7 @@ class TestLoadGribToMemoryCharacterization:
         monkeypatch.setattr(grib_module.pygrib, "open", lambda _: grbs)
         result = self.load(str(dummy_file))
         assert result is None  # exception caught, returns None
-        grbs.close.assert_not_called()  # B-18: close() was skipped — handle leaked
+        grbs.close.assert_called_once()  # B-18 fixed: close() called from finally block
 
     def test_zero_messages_returns_none_lats_lons(self, tmp_path, monkeypatch):
         """REQ-02: empty GRIB (zero messages) returns dict with lats=None, lons=None.
@@ -339,6 +338,56 @@ class TestLoadGribToMemoryCharacterization:
         result = self.load(str(dummy_file))
         stored = result["data"][self.t0]["10 metre U wind component"]
         np.testing.assert_array_equal(stored, second_u, err_msg="C-30: last message must win")
+
+
+# ---------------------------------------------------------------------------
+# analyze_grib_performance characterization (B-19)
+# ---------------------------------------------------------------------------
+
+class TestAnalyzeGribPerformanceCharacterization:
+    def _make_grbs(self, monkeypatch, lats, lons):
+        import numpy as np
+        grbs = MagicMock()
+        msg = MagicMock()
+        msg.latlons.return_value = (np.array(lats), np.array(lons))
+        grbs.readline.return_value = msg
+        monkeypatch.setattr(grib_module.pygrib, "open", MagicMock(return_value=grbs))
+        return grbs
+
+    def test_b19_grbs_close_called_even_on_latlons_exception(self, tmp_path, monkeypatch):
+        """B-19 fixed: grbs.close() is now in a finally block in analyze_grib_performance.
+        The exception still propagates, but close() must be called before it escapes."""
+        dummy_file = tmp_path / "test.grib"
+        dummy_file.write_bytes(b"")
+
+        grbs = MagicMock()
+        msg = MagicMock()
+        msg.latlons.side_effect = RuntimeError("corrupt first message")
+        grbs.readline.return_value = msg
+        monkeypatch.setattr(grib_module.pygrib, "open", MagicMock(return_value=grbs))
+
+        import grib as grib_mod
+        with pytest.raises(RuntimeError):
+            grib_mod.analyze_grib_performance(str(dummy_file))
+
+        grbs.close.assert_called_once()
+
+    def test_b19_happy_path_close_called_and_prints_diagnostics(self, tmp_path, monkeypatch, capsys):
+        """Happy path: analyze_grib_performance prints grid diagnostics and closes file."""
+        dummy_file = tmp_path / "test.grib"
+        dummy_file.write_bytes(b"")
+
+        lats = [[53.0, 53.0], [54.0, 54.0]]
+        lons = [[2.0,  3.0],  [2.0,  3.0]]
+        grbs = self._make_grbs(monkeypatch, lats, lons)
+
+        import grib as grib_mod
+        grib_mod.analyze_grib_performance(str(dummy_file))
+
+        grbs.close.assert_called_once()
+        out = capsys.readouterr().out
+        assert "GRIB DIAGNOSTICS" in out
+        assert "53" in out and "54" in out  # lat range present in output
 
 
 # ---------------------------------------------------------------------------

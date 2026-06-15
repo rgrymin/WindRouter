@@ -51,20 +51,21 @@ def load_grib_to_memory(file_path):
     
     try:
         grbs = pygrib.open(file_path)
-        for msg in grbs:
-            dt = msg.validDate
-            all_dates.add(dt)
-            param = msg.name
-            
-            if lats is None:
-                lats, lons = msg.latlons()
-                
-            if dt not in weather_cache:
-                weather_cache[dt] = {}
-            
-            weather_cache[dt][param] = msg.values
-            
-        grbs.close()
+        try:
+            for msg in grbs:
+                dt = msg.validDate
+                all_dates.add(dt)
+                param = msg.name
+
+                if lats is None:
+                    lats, lons = msg.latlons()
+
+                if dt not in weather_cache:
+                    weather_cache[dt] = {}
+
+                weather_cache[dt][param] = msg.values
+        finally:
+            grbs.close()
         return {
             'data': weather_cache,
             'dates': sorted(list(all_dates)),
@@ -504,12 +505,17 @@ def save_to_gpx(points, filename, label="Route"):
 def analyze_grib_performance(file_path):
     """GRIB file diagnostics."""
     if not os.path.exists(file_path): return
-    grbs = pygrib.open(file_path); msg = grbs.readline(); lats, lons = msg.latlons()
-    min_lat, max_lat, min_lon, max_lon = lats.min(), lats.max(), lons.min(), lons.max()
-    sn_nm = (max_lat - min_lat) * 60.0
-    ew_nm = (max_lon - min_lon) * 60.0 * math.cos(math.radians((min_lat + max_lat) / 2.0))
-    print(f"--- GRIB DIAGNOSTICS ---\nGrid: Lat {min_lat:.2f}:{max_lat:.2f}, Lon {min_lon:.2f}:{max_lon:.2f}")
-    print(f"Dimensions: S-N: {sn_nm:.2f} nm, E-W: {ew_nm:.2f} nm\n" + "-"*50); grbs.close()
+    grbs = pygrib.open(file_path)
+    try:
+        msg = grbs.readline()
+        lats, lons = msg.latlons()
+        min_lat, max_lat, min_lon, max_lon = lats.min(), lats.max(), lons.min(), lons.max()
+        sn_nm = (max_lat - min_lat) * 60.0
+        ew_nm = (max_lon - min_lon) * 60.0 * math.cos(math.radians((min_lat + max_lat) / 2.0))
+        print(f"--- GRIB DIAGNOSTICS ---\nGrid: Lat {min_lat:.2f}:{max_lat:.2f}, Lon {min_lon:.2f}:{max_lon:.2f}")
+        print(f"Dimensions: S-N: {sn_nm:.2f} nm, E-W: {ew_nm:.2f} nm\n" + "-"*50)
+    finally:
+        grbs.close()
 
 if __name__ == "__main__":
     file_name = "data/test.grb2"

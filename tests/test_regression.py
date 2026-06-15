@@ -84,7 +84,6 @@ class TestBugFixes:
         assert "graph" in data, "After B-01 fix, key must be 'graph' not 'edges'"
         assert "edges" not in data
 
-    @pytest.mark.xfail(strict=True, reason="B-18: grbs.close() not in finally — handle leaks on exception")
     def test_b18_file_handle_closed_even_on_iteration_exception(self, tmp_path, monkeypatch):
         """After B-18 is fixed, grbs.close() must be called even when iteration raises."""
         dummy = tmp_path / "bad.grib"
