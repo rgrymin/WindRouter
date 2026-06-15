@@ -495,12 +495,23 @@ def simulate_vmg_route(cache, start_lat, start_lon, target_lat, target_lon, star
         
     return route_points
 
-def save_to_gpx(points, filename, label="Route"):
-    """Saves the route track to a GPX file."""
+def save_track_gpx(points, filename, label="Route"):
+    """Saves a route as a GPX track using <trkpt> elements."""
     header = ['<?xml version="1.0" encoding="UTF-8"?>', f'<gpx version="1.1" creator="ScampiRouter" xmlns="http://www.topografix.com/GPX/1/1"><trk><name>{label}</name><trkseg>']
     body = [f'  <trkpt lat="{p["lat"]:.6f}" lon="{p["lon"]:.6f}">' + (f"<time>{p['time'].strftime('%Y-%m-%dT%H:%M:%SZ')}</time>" if 'time' in p else "") + '</trkpt>' for p in points]
     footer = ['</trkseg></trk></gpx>']
     with open(filename, 'w', encoding='utf-8') as f: f.write('\n'.join(header + body + footer))
+
+def save_waypoints_gpx(points, filename, label="Areas"):
+    """Saves a list of points as GPX waypoints using <wpt> elements (for zone files)."""
+    header = ['<?xml version="1.0" encoding="UTF-8"?>', f'<gpx version="1.1" creator="ScampiRouter" xmlns="http://www.topografix.com/GPX/1/1">']
+    body = [f'  <wpt lat="{p["lat"]:.6f}" lon="{p["lon"]:.6f}"><name>{label}</name></wpt>' for p in points]
+    footer = ['</gpx>']
+    with open(filename, 'w', encoding='utf-8') as f: f.write('\n'.join(header + body + footer))
+
+def save_to_gpx(points, filename, label="Route"):
+    """Backward-compatible alias — writes <trkpt> track elements."""
+    save_track_gpx(points, filename, label)
 
 def analyze_grib_performance(file_path):
     """GRIB file diagnostics."""
@@ -533,8 +544,8 @@ if __name__ == "__main__":
 
         if os.path.exists("output/graph_log.txt"): os.remove("output/graph_log.txt")
 
-        save_to_gpx(identify_weather_danger_zones(weather_cache, 40.0), "output/forbidden_areas.gpx", "Wind >40kt")
-        save_to_gpx(identify_weather_danger_zones(weather_cache, 30.0, 40.0), "output/caution_areas.gpx", "Wind 30-40kt")
+        save_waypoints_gpx(identify_weather_danger_zones(weather_cache, 40.0), "output/forbidden_areas.gpx", "Wind >40kt")
+        save_waypoints_gpx(identify_weather_danger_zones(weather_cache, 30.0, 40.0), "output/caution_areas.gpx", "Wind 30-40kt")
         safe_map = identify_safe_sailing_areas(weather_cache, 30.0)
 
         print("\n--- STARTING SIMULATION OF 4 ROUTES EVERY 5 HOURS ---")

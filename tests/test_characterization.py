@@ -39,6 +39,7 @@ from grib import (
     print_route_summary,
     save_graph_to_json,
     save_to_gpx,
+    save_waypoints_gpx,
     simulate_vmg_route,
 )
 from conftest import make_weather_cache, make_safe_points_map, make_full_adjacency, make_mock_grib_message
@@ -397,34 +398,39 @@ class TestAnalyzeGribPerformanceCharacterization:
 class TestIOContractsCharacterization:
     """Round-trip between grib.py (writer) and Visualiser (reader) — current broken state."""
 
-    def test_b08_engine_writes_trkpt_not_wpt(self, tmp_path):
-        """B-08 current state: save_to_gpx writes <trkpt>; gpx.waypoints is empty.
-        Visualiser reads gpx.waypoints, so zones are never rendered."""
+    def test_b08_save_waypoints_gpx_writes_wpt_elements(self, tmp_path):
+        """B-08 fixed: save_waypoints_gpx writes <wpt> elements (NOT <trkpt>).
+        Visualiser.load_area_file reads gpx.waypoints; <trkpt> elements are invisible to it."""
         points = [
             {"lat": 53.0, "lon": 2.0},
             {"lat": 53.25, "lon": 2.25},
         ]
         gpx_path = str(tmp_path / "forbidden.gpx")
-        save_to_gpx(points, gpx_path, "Forbidden")
+        save_waypoints_gpx(points, gpx_path, "Forbidden")
 
         with open(gpx_path) as fh:
             gpx = gpxpy.parse(fh)
 
+        assert len(gpx.waypoints) == 2, (
+            "B-08: save_waypoints_gpx must write 2 waypoints readable by gpxpy"
+        )
         n_trkpts = sum(len(seg.points) for trk in gpx.tracks for seg in trk.segments)
-        assert n_trkpts == 2, "Engine writes 2 track points"
-        assert len(gpx.waypoints) == 0, "B-08: current engine writes <trkpt>, not <wpt>"
+        assert n_trkpts == 0, "B-08: save_waypoints_gpx must NOT write any <trkpt> elements"
 
-    def test_b08_raw_gpx_contains_trkpt_element(self, tmp_path):
-        """B-08 current state: raw XML contains <trkpt> not <wpt>."""
+    def test_b08_save_waypoints_gpx_raw_xml_contains_wpt(self, tmp_path):
+        """B-08 fixed: raw XML produced by save_waypoints_gpx contains <wpt> not <trkpt>."""
         points = [{"lat": 54.0, "lon": 3.0}]
         gpx_path = str(tmp_path / "caution.gpx")
-        save_to_gpx(points, gpx_path, "Caution")
+        save_waypoints_gpx(points, gpx_path, "Caution")
 
         with open(gpx_path) as fh:
             raw = fh.read()
 
-        assert "<trkpt" in raw, "Engine must write <trkpt> element (documents current state)"
-        assert "<wpt" not in raw, "B-08: engine does not write <wpt> — Visualiser cannot read zone"
+        assert "<wpt" in raw, "B-08: save_waypoints_gpx must write <wpt> element"
+        assert "<trkpt" not in raw, (
+            "B-08: save_waypoints_gpx must NOT write <trkpt> — "
+            "Visualiser reads waypoints, not track segments"
+        )
 
     def test_b01_engine_writes_edges_key_not_graph(self, tmp_path):
         """B-01 current state: save_graph_to_json writes key 'edges'.

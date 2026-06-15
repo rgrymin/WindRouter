@@ -26,6 +26,7 @@ from grib import (
     print_route_summary,
     save_graph_to_json,
     save_to_gpx,
+    save_waypoints_gpx,
     simulate_vmg_route,
 )
 from conftest import make_weather_cache
@@ -59,17 +60,37 @@ class TestBugFixes:
         assert len(result) > 0, "Southbound route must not be empty after B-04 fix"
         assert result[-1]["lat"] < 54.0, "Route must make southward progress"
 
-    @pytest.mark.xfail(strict=True, reason="B-08: save_to_gpx writes <trkpt>, Visualiser needs <wpt>")
     def test_b08_zone_gpx_written_as_waypoints(self, tmp_path):
-        """After B-08 is fixed, zone GPX files must contain <wpt> elements."""
+        """B-08 fixed: save_waypoints_gpx writes <wpt> elements readable by Visualiser."""
         points = [{"lat": 53.0, "lon": 2.0}]
         gpx_path = str(tmp_path / "zone.gpx")
-        save_to_gpx(points, gpx_path)
+        save_waypoints_gpx(points, gpx_path)
         with open(gpx_path) as fh:
             gpx = gpxpy.parse(fh)
-        assert len(gpx.waypoints) == 1, "Zone files must use <wpt> after B-08 fix"
+        assert len(gpx.waypoints) == 1, "Zone files must use <wpt>"
 
-    @pytest.mark.xfail(strict=True, reason="B-01: engine writes key 'edges', Visualiser reads 'graph'")
+    def test_b08_save_waypoints_gpx_does_not_write_trkpt(self, tmp_path):
+        """B-08: save_waypoints_gpx must write <wpt>, NOT <trkpt>.
+
+        Regression: reverting B-08 (removing save_waypoints_gpx and routing zone
+        files through save_to_gpx) would produce <trkpt> elements.  Visualiser
+        reads gpx.waypoints; if <wpt> is absent, zones never render.
+        """
+        points = [{"lat": 53.0, "lon": 2.0}, {"lat": 54.0, "lon": 3.0}]
+        gpx_path = str(tmp_path / "zones.gpx")
+        save_waypoints_gpx(points, gpx_path)
+        raw = open(gpx_path).read()
+        assert "<wpt" in raw, "B-08: save_waypoints_gpx must produce <wpt> elements"
+        assert "<trkpt" not in raw, (
+            "B-08: save_waypoints_gpx must NOT produce <trkpt> — "
+            "Visualiser reads waypoints, not track points"
+        )
+        with open(gpx_path) as fh:
+            gpx = gpxpy.parse(fh)
+        assert len(gpx.waypoints) == 2, (
+            "B-08: both zone points must be readable as waypoints by gpxpy"
+        )
+
     def test_b01_graph_json_uses_graph_key(self, tmp_path):
         """After B-01 is fixed, the JSON key must be 'graph' so Visualiser can read it."""
         nodes = {(0, 0), (0, 1)}
