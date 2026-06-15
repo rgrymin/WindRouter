@@ -503,9 +503,10 @@ def simulate_vmg_route(cache, start_lat, start_lon, target_lat, target_lon, star
             
         dist = best_bs * (time_step_min / 60.0)
         route_points.append({'lat': curr_lat, 'lon': curr_lon, 'time': curr_time})
-        
+
+        old_lat = curr_lat
         curr_lat += (dist * math.cos(math.radians(best_hdg))) / 60.0
-        curr_lon += (dist * math.sin(math.radians(best_hdg))) / (60.0 * math.cos(math.radians(curr_lat)))
+        curr_lon += (dist * math.sin(math.radians(best_hdg))) / (60.0 * math.cos(math.radians(old_lat)))
         curr_time += timedelta(minutes=time_step_min)
         step += 1
 

@@ -160,31 +160,89 @@ class TestBugFixes:
             pytest.fail(f"B-26: print_route_summary crashed with TypeError: {e}")
 
     @pytest.mark.slow
-    @pytest.mark.xfail(strict=True, reason="B-20: curr_lon update uses already-incremented curr_lat — cos() sees wrong latitude")
-    def test_b20_vmg_lon_update_uses_pre_advance_latitude(self):
-        """After B-20 is fixed, the cos() in the lon update must use lat BEFORE the
-        lat increment on the same step. Test uses a NE diagonal route where the
-        latitude error accumulates meaningfully over many steps."""
-        # Large latitudinal range so the bug's cos() error compounds over ~100+ steps
+    def test_b20_vmg_lon_update_uses_pre_advance_latitude(self, monkeypatch):
+        """B-20 fixed: lon update uses old_lat (before lat increment), not new_lat.
+
+        Strategy: intercept the heading and boat-speed chosen by VMG on the first step
+        by monkeypatching grib.calculate_distance_nm so the loop exits after exactly
+        one advance. Then independently compute expected_lon using old_lat and
+        expected_lon_buggy using new_lat. Assert actual lon matches expected_lon.
+        """
+        import math as _math
+        import grib as grib_mod
+        from grib import get_scampi_30_polars, calculate_bearing
+
         cache = make_weather_cache(
             lats_1d=[53.0, 53.25, 53.5, 53.75, 54.0, 54.25, 54.5, 54.75, 55.0],
             lons_1d=[2.0, 2.25, 2.5, 2.75, 3.0, 3.25, 3.5],
-            u_speed=5.0, v_speed=5.0,  # wind from SW — NE sailing
+            u_speed=5.0, v_speed=5.0,   # SW wind ~13.6 kt, TWD=225°
         )
-        # With the bug: lon update uses cos(new_lat) instead of cos(old_lat)
-        # The sign of the error depends on direction. We verify the computation
-        # is self-consistent: running the route twice with identical inputs
-        # must give bitwise-identical results (regression guard).
-        result1 = simulate_vmg_route(
-            cache, start_lat=53.0, start_lon=2.0, target_lat=54.75, target_lon=3.25,
-            start_time=cache["dates"][0],
+        start_lat, start_lon = 53.0, 2.0
+        target_lat, target_lon = 54.75, 3.25
+        t0 = cache["dates"][0]
+
+        # Intercept the best_hdg chosen at step 0 by capturing math.cos calls.
+        # Simpler: run the full route and inspect result[1], but compute expected lon
+        # from scratch using get_scampi_30_polars + the known weather at (53.0, 2.0).
+        from grib import get_weather_from_cache, calculate_distance_nm
+        weather = get_weather_from_cache(cache, start_lat, start_lon, t0)
+        u, v = weather["wind_u"], weather["wind_v"]
+        # True wind speed and direction
+        tws_kt = _math.sqrt(u**2 + v**2) * 1.94384
+        twd = (_math.degrees(_math.atan2(-u, -v)) + 360) % 360
+
+        polars = get_scampi_30_polars()
+        time_step_min = 10.0
+
+        # Find the best heading VMG would choose (mirrors the inner loop logic)
+        best_vmg, best_hdg, best_bs = -1.0, None, None
+        for hdg in range(0, 360, 2):
+            twa = (hdg - twd + 360) % 360
+            if twa < 32 or twa > 328:
+                continue
+            twa_sym = twa if twa <= 180 else 360 - twa
+            bs = polars([twa_sym, tws_kt])[0]
+            if bs <= 0:
+                continue
+            dist_step = bs * (time_step_min / 60.0)
+            next_lat = start_lat + (dist_step * _math.cos(_math.radians(hdg))) / 60.0
+            next_lon = start_lon + (dist_step * _math.sin(_math.radians(hdg))) / (
+                60.0 * _math.cos(_math.radians(start_lat))  # old_lat — correct formula
+            )
+            vmg = calculate_distance_nm(start_lat, start_lon, target_lat, target_lon) - \
+                  calculate_distance_nm(next_lat, next_lon, target_lat, target_lon)
+            if vmg > best_vmg:
+                best_vmg, best_hdg, best_bs = vmg, hdg, bs
+
+        assert best_hdg is not None, "Test setup: VMG must find a valid heading"
+
+        # Compute expected p1.lon analytically using old_lat (the correct formula)
+        dist = best_bs * (time_step_min / 60.0)
+        expected_lon_correct = start_lon + (dist * _math.sin(_math.radians(best_hdg))) / (
+            60.0 * _math.cos(_math.radians(start_lat))  # old_lat
         )
-        result2 = simulate_vmg_route(
-            cache, start_lat=53.0, start_lon=2.0, target_lat=54.75, target_lon=3.25,
-            start_time=cache["dates"][0],
+        # And what the buggy formula (new_lat) would have produced
+        new_lat = start_lat + (dist * _math.cos(_math.radians(best_hdg))) / 60.0
+        expected_lon_buggy = start_lon + (dist * _math.sin(_math.radians(best_hdg))) / (
+            60.0 * _math.cos(_math.radians(new_lat))   # new_lat — the bug
         )
-        assert result1 == result2, "Deterministic route must be identical across calls"
-        # After fix, lon step must use old lat: assert that a manual single-step
-        # using old_lat gives the same result as the engine.
-        # (This assertion will XPASS once B-20 is fixed.)
-        assert False, "Placeholder: replace with actual lat-before/after comparison after fix"
+
+        # Sanity: the two formulas must give different values for this to be a real test
+        assert not _math.isclose(expected_lon_correct, expected_lon_buggy, rel_tol=1e-9), (
+            "Test setup error: old_lat and new_lat formulas give identical lon — "
+            "heading has no E-W component, choose a different scenario"
+        )
+
+        # Run the actual implementation
+        result = simulate_vmg_route(
+            cache, start_lat=start_lat, start_lon=start_lon,
+            target_lat=target_lat, target_lon=target_lon,
+            start_time=t0,
+        )
+        assert len(result) >= 2, "B-20: route must have at least 2 points"
+
+        actual_lon = result[1]["lon"]
+        assert actual_lon == pytest.approx(expected_lon_correct, abs=1e-9), (
+            f"B-20: p1.lon={actual_lon:.10f} does not match old_lat formula "
+            f"({expected_lon_correct:.10f}); buggy new_lat formula gives {expected_lon_buggy:.10f}"
+        )
