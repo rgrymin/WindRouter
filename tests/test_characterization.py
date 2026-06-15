@@ -96,25 +96,33 @@ class TestVMGCharacterization:
         )
         self.t0 = self.cache["dates"][0]
 
-    def test_b04_target_south_of_start_returns_empty(self):
-        """B-04: while curr_lat < target_lat — loop never executes when target <= start."""
+    def test_b04_target_south_of_start_returns_route(self):
+        """B-04 fixed: distance-based loop condition works for southbound targets.
+
+        With the bug (while curr_lat < target_lat), start=54.5 > target=53.0 means
+        the condition is False immediately → returns [].  After the fix the loop
+        runs until distance < 1 nm, so the route must be non-empty and must make
+        southward progress.
+        """
         result = simulate_vmg_route(
             self.cache,
             start_lat=54.5, start_lon=2.25,
             target_lat=53.0, target_lon=2.25,
             start_time=self.t0,
         )
-        assert result == [], "B-04: target south of start must produce empty route"
+        assert len(result) > 0, "B-04: southbound route must not be empty after fix"
+        assert result[-1]["lat"] < 54.5, "B-04: route must make southward progress"
 
-    def test_b04_target_same_latitude_returns_empty(self):
-        """B-04: target at same latitude — loop condition False immediately."""
+    def test_b04_target_same_latitude_returns_route(self):
+        """B-04 fixed: distance-based loop condition works when target at same latitude."""
         result = simulate_vmg_route(
             self.cache,
             start_lat=53.5, start_lon=2.25,
             target_lat=53.5, target_lon=2.5,
             start_time=self.t0,
         )
-        assert result == [], "B-04: target at same latitude must produce empty route"
+        assert isinstance(result, list)
+        assert len(result) > 0, "B-04: same-latitude target must produce a non-empty route"
 
 
 # ---------------------------------------------------------------------------

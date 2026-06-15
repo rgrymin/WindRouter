@@ -464,7 +464,7 @@ def simulate_vmg_route(cache, start_lat, start_lon, target_lat, target_lon, star
     
     print(f"[VMG DIAG] Start simulation: {curr_time.strftime('%Y-%m-%d %H:%M')}")
     
-    while curr_lat < target_lat:
+    while calculate_distance_nm(curr_lat, curr_lon, target_lat, target_lon) > 1.0:
         weather = get_weather_from_cache(cache, curr_lat, curr_lon, curr_time)
         if not weather: break
         
@@ -507,10 +507,7 @@ def simulate_vmg_route(cache, start_lat, start_lon, target_lat, target_lon, star
         curr_lon += (dist * math.sin(math.radians(best_hdg))) / (60.0 * math.cos(math.radians(curr_lat)))
         curr_time += timedelta(minutes=time_step_min)
         step += 1
-        
-        if calculate_distance_nm(curr_lat, curr_lon, target_lat, target_lon) < 1.0:
-            break
-            
+
         if step >= 10000: break
         
     return route_points

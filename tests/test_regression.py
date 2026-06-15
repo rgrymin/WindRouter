@@ -43,7 +43,6 @@ class TestBugFixes:
     """
 
     @pytest.mark.slow
-    @pytest.mark.xfail(strict=True, reason="B-04: loop `while curr_lat < target_lat` never runs for southbound target")
     def test_b04_southbound_vmg_returns_non_empty_route(self):
         """After B-04 is fixed, a southbound target must produce a real route."""
         cache = make_weather_cache(
