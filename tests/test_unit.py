@@ -431,6 +431,9 @@ class TestDijkstra2D:
             assert "max_speed" in pt
             # No 'time' key — added externally in __main__
             assert "time" not in pt
+            # B-25: _cost must be present (consumed by __main__ for timestamp injection)
+            assert "_cost" in pt
+            assert isinstance(pt["_cost"], float)
 
     def test_returns_empty_list_for_no_start_node(self):
         path, cost = find_shortest_path_dijkstra(
@@ -456,28 +459,59 @@ class TestDijkstra2D:
         assert len(path) > 0
         assert cost > 0
 
-    def test_path_is_direct_reference_not_copy(self):
-        """REQ-06: waypoints are direct references into safe_points_map, not copies."""
+    def test_path_is_copy_not_reference(self):
+        """B-25 fix: waypoints are now copies (to allow safe _cost→time injection)."""
         path, _ = find_shortest_path_dijkstra(
             self.start_node, self.adj, self.spm,
             self.target_lat, self.target_lon,
         )
         assert len(path) > 0
-        # Record original lat before any mutation
         original_lat = path[0]["lat"]
-        original_lon = path[0]["lon"]
-        # Find the spm key that matches this point by coordinates
         spm_key = next(
             k for k, v in self.spm.items()
-            if v["lat"] == pytest.approx(original_lat) and v["lon"] == pytest.approx(original_lon)
+            if v["lat"] == pytest.approx(original_lat)
         )
-        # Mutate through the path reference
         path[0]["lat"] = 999.0
-        # The spm entry must be the same object — mutation must be visible there too
-        assert self.spm[spm_key]["lat"] == 999.0, (
-            "REQ-06: path[0] must be a direct reference into spm, not a copy"
+        assert self.spm[spm_key]["lat"] == pytest.approx(original_lat), (
+            "B-25: path waypoints must be copies, not references into spm"
         )
-        path[0]["lat"] = original_lat  # restore
+
+    def test_b25_cost_values_are_cumulative_dijkstra_distances_not_linear(self):
+        """B-25: _cost must equal the accumulated Dijkstra distance for each node,
+        NOT a linearly-interpolated fraction of total cost.
+
+        With non-uniform edge costs (1.0, 3.0, 0.5), Dijkstra gives:
+          node 0: 0.0,  node 1: 1.0,  node 2: 4.0,  node 3: 4.5
+        Linear interpolation of total 4.5 across 4 nodes would give:
+          0.0, 1.5, 3.0, 4.5  — distinctly different at positions 1 and 2.
+        """
+        spm_4 = {
+            (0, 0): {"lat": 53.0,  "lon": 2.0,   "max_speed": 6.0},
+            (0, 1): {"lat": 53.0,  "lon": 2.25,  "max_speed": 6.0},
+            (0, 2): {"lat": 53.0,  "lon": 2.5,   "max_speed": 6.0},
+            (0, 3): {"lat": 53.0,  "lon": 2.75,  "max_speed": 6.0},
+        }
+        adj_4 = {
+            (0, 0): [{"target": (0, 1), "cost": 1.0}],
+            (0, 1): [{"target": (0, 2), "cost": 3.0}],
+            (0, 2): [{"target": (0, 3), "cost": 0.5}],
+            (0, 3): [],
+        }
+        path, total_cost = find_shortest_path_dijkstra(
+            (0, 0), adj_4, spm_4, 53.0, 2.75
+        )
+        assert len(path) == 4, "Path must have all 4 nodes"
+        costs = [p["_cost"] for p in path]
+
+        assert costs[0] == pytest.approx(0.0, abs=1e-9)
+        assert costs[1] == pytest.approx(1.0, abs=1e-9), (
+            f"_cost[1]={costs[1]:.4f}: Dijkstra=1.0, linear-interp=1.5"
+        )
+        assert costs[2] == pytest.approx(4.0, abs=1e-9), (
+            f"_cost[2]={costs[2]:.4f}: Dijkstra=4.0, linear-interp=3.0"
+        )
+        assert costs[3] == pytest.approx(4.5, abs=1e-9)
+        assert total_cost == pytest.approx(4.5, abs=1e-9)
 
 
 # ---------------------------------------------------------------------------

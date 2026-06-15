@@ -254,9 +254,9 @@ def find_shortest_path_dijkstra(start_node, adjacency_map, safe_points_map, targ
     if not start_node or not adjacency_map: return [], 0
     
     distances = {node: float('inf') for node in adjacency_map.keys()}
-    distances[start_node] = 0
+    distances[start_node] = 0.0
     predecessors = {node: None for node in adjacency_map.keys()}
-    pq = [(0, start_node)]
+    pq = [(0.0, start_node)]
     
     nodes_visited = 0
     while pq:
@@ -286,7 +286,10 @@ def find_shortest_path_dijkstra(start_node, adjacency_map, safe_points_map, targ
     path = []
     curr = best_finish
     while curr is not None:
-        path.append(safe_points_map[curr]); curr = predecessors[curr]
+        waypoint = safe_points_map[curr].copy()
+        waypoint['_cost'] = distances[curr]
+        path.append(waypoint)
+        curr = predecessors[curr]
     return path[::-1], total_cost
 
 def find_shortest_path_dijkstra_3d(start_node, safe_points_map, target_lat, target_lon, start_time, cache):
@@ -577,8 +580,8 @@ if __name__ == "__main__":
                 save_graph_to_json(nodes, adj, safe_map, "output/sailing_graph.json")
                 fastest_path_2d, d_cost_2d = find_shortest_path_dijkstra(start_idx, adj, safe_map, target_lat, target_lon)
                 if fastest_path_2d:
-                    for idx, p in enumerate(fastest_path_2d):
-                        p['time'] = current_departure_time + timedelta(hours=(idx * d_cost_2d / len(fastest_path_2d)))
+                    for p in fastest_path_2d:
+                        p['time'] = current_departure_time + timedelta(hours=p.pop('_cost', 0))
                     save_to_gpx(fastest_path_2d, f"output/fastest_path_start_{i}.gpx", f"Dijkstra 2D Route {i}")
                     save_route_detailed_log(fastest_path_2d, weather_cache, f"output/log_dijkstra_start_{i}.txt", f"Dijkstra 2D Route {i}")
                     print_route_summary(fastest_path_2d, f"DIJKSTRA 2D (START {i})", d_cost_2d)
