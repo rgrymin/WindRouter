@@ -504,3 +504,90 @@ class TestPrintRouteSummaryCharacterization:
         print_route_summary(points, "Test")
         out = capsys.readouterr().out
         assert "N/A" in out
+
+
+# ---------------------------------------------------------------------------
+# Visualiser characterization (B-27)
+# ---------------------------------------------------------------------------
+
+class TestVisualiserCharacterization:
+    """B-27: check_files_loop reschedules root.after unconditionally (not gated by force),
+    and force_reload_areas cancels the existing timer before calling check_files_loop
+    so that exactly one polling chain exists at all times."""
+
+    def _make_app(self):
+        """Build a GPXViewerApp with all Tk/map calls stubbed out."""
+        import sys
+        tk_mod = MagicMock()
+        tk_mod.BooleanVar.return_value.get.return_value = False
+        sys.modules.setdefault("tkinter", tk_mod)
+        sys.modules.setdefault("tkinter.filedialog", MagicMock())
+        sys.modules.setdefault("tkinter.messagebox", MagicMock())
+        sys.modules.setdefault("tkintermapview", MagicMock())
+        sys.modules.setdefault("gpxpy", MagicMock())
+        sys.modules.setdefault("gpxpy.gpx", MagicMock())
+        sys.modules.setdefault("global_land_mask", MagicMock())
+
+        import importlib
+        import Visualiser as vis_mod
+        importlib.reload(vis_mod)
+
+        root = MagicMock()
+        # root.after() returns a fake timer ID each call
+        root.after.side_effect = lambda delay, fn: object()
+
+        app = vis_mod.GPXViewerApp.__new__(vis_mod.GPXViewerApp)
+        app.root = root
+        app.vmg_files = []
+        app.fastest_files = []
+        app.fastest_3d_files = []
+        app.forbidden_file = "nonexistent_forbidden.gpx"
+        app.not_recommended_file = "nonexistent_not_recommended.gpx"
+        app.graph_file = "nonexistent_graph.json"
+        app.last_vmg_mtimes = []
+        app.last_fastest_mtimes = []
+        app.last_fastest_3d_mtimes = []
+        app.last_forbidden_mtime = 0
+        app.last_not_recommended_mtime = 0
+        app.last_graph_mtime = 0
+        app._poll_after_id = None
+        app.show_land_mask_var = MagicMock()
+        app.show_land_mask_var.get.return_value = False
+        return app
+
+    def test_b27_normal_call_reschedules_timer(self):
+        """B-27 fixed: check_files_loop always calls root.after(10000, ...) — normal call."""
+        app = self._make_app()
+        app.check_files_loop()
+        app.root.after.assert_called_once_with(10000, app.check_files_loop)
+
+    def test_b27_force_call_also_reschedules_timer(self):
+        """B-27 fixed: check_files_loop always calls root.after even when force=True."""
+        app = self._make_app()
+        app.check_files_loop(force=True)
+        app.root.after.assert_called_once_with(10000, app.check_files_loop)
+
+    def test_b27_force_reload_does_not_duplicate_timer_chain(self):
+        """B-27 fix must not spawn a second timer chain.
+        Scenario: normal poll runs (timer A scheduled), then force_reload_areas() is called.
+        force_reload_areas must cancel timer A before calling check_files_loop,
+        so root.after is called exactly twice total (once normal, once forced),
+        and after_cancel is called once with the first timer's ID."""
+        app = self._make_app()
+
+        # Step 1: normal poll — schedules timer A, stores ID in _poll_after_id
+        app.check_files_loop()
+        timer_a = app._poll_after_id
+        assert timer_a is not None, "Normal poll must store timer ID"
+        assert app.root.after.call_count == 1
+
+        # Step 2: user clicks checkbox — force_reload_areas cancels timer A, then polls
+        app.force_reload_areas()
+
+        # after_cancel must have been called with timer A's ID
+        app.root.after_cancel.assert_called_once_with(timer_a)
+        # root.after called exactly twice total (step 1 + step 2), not three times
+        assert app.root.after.call_count == 2, (
+            f"Expected 2 root.after calls (normal + forced), got {app.root.after.call_count}. "
+            "Timer chain was duplicated."
+        )

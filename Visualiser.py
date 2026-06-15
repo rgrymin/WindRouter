@@ -36,6 +36,7 @@ class GPXViewerApp:
         self.last_forbidden_mtime = 0
         self.last_not_recommended_mtime = 0
         self.last_graph_mtime = 0
+        self._poll_after_id = None
 
         # Map objects
         self.vmg_objs = [None] * 4
@@ -264,6 +265,9 @@ class GPXViewerApp:
         self.last_forbidden_mtime = 0
         self.last_not_recommended_mtime = 0
         self.last_graph_mtime = 0
+        if self._poll_after_id is not None:
+            self.root.after_cancel(self._poll_after_id)
+            self._poll_after_id = None
         self.check_files_loop(force=True)
 
     def check_files_loop(self, force=False):
@@ -317,8 +321,7 @@ class GPXViewerApp:
         if any_update and self.show_land_mask_var.get():
             self.draw_global_land_mask()
 
-        if not force:
-            self.root.after(10000, self.check_files_loop)
+        self._poll_after_id = self.root.after(10000, self.check_files_loop)
 
     def manual_load_gpx(self):
         f = filedialog.askopenfilename(filetypes=[("GPX files", "*.gpx")])
