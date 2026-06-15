@@ -118,7 +118,6 @@ class TestBugFixes:
 
         grbs.close.assert_called_once()  # must be called from finally block
 
-    @pytest.mark.xfail(strict=True, reason="B-21: flat-earth formula breaks at the antimeridian — lon crossing gives ~21000 nm instead of ~120 nm")
     def test_b21_distance_handles_antimeridian_crossing(self):
         """After B-21 is fixed with proper Haversine, antimeridian crossing must give ~120 nm.
         The flat formula uses raw lon2-lon1 = -358° which inflates to ~21000 nm."""

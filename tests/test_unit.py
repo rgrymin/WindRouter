@@ -64,36 +64,33 @@ class TestCalculateDistanceNm:
         assert calculate_distance_nm(53.0, 2.0, 53.0, 2.0) == pytest.approx(0.0)
 
     def test_one_degree_latitude_approx_60nm(self):
+        """B-21: Haversine gives ~60.04 nm per degree of latitude.
+        Flat-earth gives exactly 60.00 nm. Tolerance 0.01 distinguishes them."""
         d = calculate_distance_nm(53.0, 2.0, 54.0, 2.0)
-        assert abs(d - 60.0) < 1.0, f"Expected ~60 nm, got {d}"
+        assert d == pytest.approx(60.04, abs=0.01), (
+            f"Expected ~60.04 nm (Haversine), got {d:.4f}. "
+            "Flat-earth gives 60.000 and would fail this assertion."
+        )
 
     def test_longitude_uses_cos_correction(self):
-        """C-29: uses cos(avg_lat) correction — not pure flat-earth."""
+        """B-21: E-W distance uses proper spherical geometry.
+        Haversine gives 35.708 nm; flat-earth (cos avg_lat) gives 35.689 nm.
+        Tolerance 0.01 distinguishes them."""
         d_ns = calculate_distance_nm(53.0, 2.0, 54.0, 2.0)
         d_ew = calculate_distance_nm(53.5, 2.0, 53.5, 3.0)
-        # E-W degree at 53.5°N ≈ 60 × cos(53.5°) ≈ 35.7 nm
         assert d_ew < d_ns, "E-W distance should be shorter than N-S at 53°N"
-        assert abs(d_ew - 35.7) < 1.0, f"Expected ~35.7 nm E-W at 53.5°N, got {d_ew}"
-
-    def test_cos_correction_uses_average_latitude(self):
-        """C-29: cos factor uses average of both latitudes, not departure latitude.
-        Use asymmetric endpoints so avg_lat (53.5°) ≠ departure_lat (53.0°).
-        avg_lat formula: d_lon × 60 × cos(avg_lat_rad) where avg = (53+54)/2 = 53.5°
-        departure_lat formula would use cos(53.0°) instead — gives different result."""
-        # Asymmetric pair: lat1=53.0, lat2=54.0, lon difference = 1.0°
-        d = calculate_distance_nm(53.0, 2.0, 54.0, 3.0)
-        avg_lat_rad = math.radians((53.0 + 54.0) / 2.0)  # 53.5°
-        dep_lat_rad = math.radians(53.0)
-        d_lat = (54.0 - 53.0) * 60.0
-        d_lon_avg = (3.0 - 2.0) * 60.0 * math.cos(avg_lat_rad)
-        d_lon_dep = (3.0 - 2.0) * 60.0 * math.cos(dep_lat_rad)
-        expected_avg = math.sqrt(d_lat**2 + d_lon_avg**2)
-        expected_dep = math.sqrt(d_lat**2 + d_lon_dep**2)
-        assert d == pytest.approx(expected_avg, abs=0.001), (
-            f"C-29: expected avg_lat formula ({expected_avg:.4f} nm), got {d:.4f} nm"
+        assert d_ew == pytest.approx(35.71, abs=0.01), (
+            f"Expected 35.71 nm E-W at 53.5°N (Haversine), got {d_ew:.4f}. "
+            "Flat-earth gives ~35.689 nm and would fail this assertion."
         )
-        assert d != pytest.approx(expected_dep, abs=0.001), (
-            "C-29: result must differ from departure_lat formula"
+
+    def test_haversine_known_value(self):
+        """B-21 fixed: Haversine gives accurate result for a known 1° lat/lon diagonal.
+        Haversine: 69.857 nm; flat-earth: 69.812 nm. Tolerance 0.01 distinguishes them."""
+        d = calculate_distance_nm(53.0, 2.0, 54.0, 3.0)
+        assert d == pytest.approx(69.857, abs=0.01), (
+            f"Expected 69.857 nm (Haversine), got {d:.4f}. "
+            "Flat-earth gives 69.812 nm and would fail this assertion."
         )
 
     def test_symmetry(self):
@@ -484,6 +481,9 @@ class TestDijkstra2D:
           node 0: 0.0,  node 1: 1.0,  node 2: 4.0,  node 3: 4.5
         Linear interpolation of total 4.5 across 4 nodes would give:
           0.0, 1.5, 3.0, 4.5  — distinctly different at positions 1 and 2.
+
+        Regression: restoring linear interpolation makes costs[1]=1.5, costs[2]=3.0,
+        both of which differ from expected by > 0.1.
         """
         spm_4 = {
             (0, 0): {"lat": 53.0,  "lon": 2.0,   "max_speed": 6.0},
@@ -503,6 +503,7 @@ class TestDijkstra2D:
         assert len(path) == 4, "Path must have all 4 nodes"
         costs = [p["_cost"] for p in path]
 
+        # Dijkstra cumulative costs
         assert costs[0] == pytest.approx(0.0, abs=1e-9)
         assert costs[1] == pytest.approx(1.0, abs=1e-9), (
             f"_cost[1]={costs[1]:.4f}: Dijkstra=1.0, linear-interp=1.5"
@@ -1815,29 +1816,55 @@ class TestUKeyLowercaseFallback:
         assert "wind_u" in result, "B-22: result must contain 'wind_u'"
         assert "wind_v" in result, "B-22: result must contain 'wind_v'"
 
-    def test_danger_zones_with_lowercase_u_key_returns_list(self):
-        """identify_weather_danger_zones must work with lowercase '10 metre u wind component'
-        and return a non-None list (not silently empty due to skipped timesteps)."""
-        cache = self._make_lowercase_u_cache()
-        zones = identify_weather_danger_zones(cache, min_threshold=40.0)
-        assert isinstance(zones, list)
-        # At u=5.0, v=0.0 → TWS ≈ 9.7 kt, well below 40 kt → no danger zones
-        # (any result is valid; the key point is it does not crash or return None)
+    def test_b22_get_weather_returns_wind_data_for_lowercase_v_key_also(self):
+        """B-22: get_weather_from_cache must handle lowercase V key too.
 
-    def test_safe_areas_with_lowercase_u_key_consistent_with_uppercase(self):
-        """Uppercase and lowercase U key must produce identical safe-area sets.
-        Before B-22 fix: lowercase cache → spm is empty (all get_weather_from_cache
-        calls return None → no cells survive). After fix: same result as uppercase.
+        Constructs a cache where both U and V keys are lowercase, verifies that
+        get_weather_from_cache returns non-None with correct wind_u and wind_v.
+        Bug (no fallback for V): u found, v=None → returns None.
         """
-        cache_upper = make_weather_cache(u_speed=5.0, v_speed=0.0)
-        cache_lower = self._make_lowercase_u_cache()
-        spm_upper = identify_safe_sailing_areas(cache_upper, max_wind_threshold=30.0)
-        spm_lower = identify_safe_sailing_areas(cache_lower, max_wind_threshold=30.0)
-        assert len(spm_lower) > 0, (
-            "B-22: lowercase U cache produces empty safe-area map — "
-            "get_weather_from_cache fallback not working"
+        from grib import get_weather_from_cache
+        cache = make_weather_cache(u_speed=5.0, v_speed=3.0)
+        for dt in cache["data"]:
+            d = cache["data"][dt]
+            for old_key, new_key in [
+                ("10 metre U wind component", "10 metre u wind component"),
+                ("10 metre V wind component", "10 metre v wind component"),
+            ]:
+                if old_key in d:
+                    d[new_key] = d.pop(old_key)
+        t0 = cache["dates"][0]
+        lats, lons = cache["lats"], cache["lons"]
+        mid_r, mid_c = lats.shape[0] // 2, lons.shape[1] // 2
+        lat, lon = float(lats[mid_r, mid_c]), float(lons[mid_r, mid_c])
+
+        result = get_weather_from_cache(cache, lat, lon, t0)
+
+        assert result is not None, (
+            "B-22: get_weather_from_cache returned None for lowercase V key — "
+            "the V-key case-insensitive fallback is missing"
         )
-        assert set(spm_upper.keys()) == set(spm_lower.keys())
+        assert "wind_v" in result
+
+    def test_b22_get_weather_returns_none_when_both_keys_absent(self):
+        """B-22 boundary: get_weather_from_cache must return None when neither
+        uppercase nor lowercase key exists — not crash with KeyError."""
+        from grib import get_weather_from_cache
+        cache = make_weather_cache(u_speed=5.0, v_speed=0.0)
+        # Remove both U key variants entirely
+        for dt in cache["data"]:
+            d = cache["data"][dt]
+            d.pop("10 metre U wind component", None)
+            d.pop("10 metre u wind component", None)
+        t0 = cache["dates"][0]
+        lats, lons = cache["lats"], cache["lons"]
+        lat, lon = float(lats[0, 0]), float(lons[0, 0])
+
+        result = get_weather_from_cache(cache, lat, lon, t0)
+        assert result is None, (
+            "B-22: get_weather_from_cache must return None (not crash) "
+            "when both uppercase and lowercase U keys are absent"
+        )
 
     def test_b22_get_weather_from_cache_with_lowercase_u_key_returns_wind_data(self):
         """Core B-22 regression: get_weather_from_cache must not return None when

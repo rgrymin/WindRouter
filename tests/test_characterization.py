@@ -482,15 +482,11 @@ class TestIOContractsCharacterization:
 # ---------------------------------------------------------------------------
 
 class TestDistanceCharacterization:
-    def test_near_antimeridian_gives_large_wrong_value(self):
-        """C-29 / B-21 limitation: flat formula uses lon2-lon1 directly.
-        Crossing the antimeridian gives a huge erroneous distance (~21000 nm).
-        This test documents the known bug — real distance is ~120 nm."""
+    def test_near_antimeridian_gives_correct_haversine_value(self):
+        """B-21 fixed: Haversine handles antimeridian crossing correctly (~120 nm)."""
         d = calculate_distance_nm(0.0, 179.0, 0.0, -179.0)
-        # Real great-circle distance ≈ 120 nm; flat formula gives ~21480 nm
-        assert d > 10000.0, (
-            f"Antimeridian crossing gives wrong distance {d:.1f} nm "
-            "(expected ~21000 with flat formula — documents the limitation)"
+        assert d < 200.0, (
+            f"Haversine must give ~120 nm for antimeridian crossing, got {d:.1f} nm"
         )
 
 

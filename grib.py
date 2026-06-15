@@ -119,11 +119,13 @@ def calculate_bearing(lat1, lon1, lat2, lon2):
     return (math.degrees(math.atan2(y, x)) + 360) % 360
 
 def calculate_distance_nm(lat1, lon1, lat2, lon2):
-    """Calculates distance in nautical miles (nm)."""
-    avg_lat = math.radians((lat1 + lat2) / 2.0)
-    d_lat = (lat2 - lat1) * 60.0
-    d_lon = (lon2 - lon1) * 60.0 * math.cos(avg_lat)
-    return math.sqrt(d_lat**2 + d_lon**2)
+    """Calculates distance in nautical miles using the Haversine formula."""
+    R = 3440.065
+    lat1_r, lat2_r = math.radians(lat1), math.radians(lat2)
+    d_lat = math.radians(lat2 - lat1)
+    d_lon = math.radians(lon2 - lon1)
+    a = math.sin(d_lat / 2) ** 2 + math.cos(lat1_r) * math.cos(lat2_r) * math.sin(d_lon / 2) ** 2
+    return R * 2 * math.asin(math.sqrt(a))
 
 def identify_weather_danger_zones(cache, min_threshold, max_threshold=float('inf')):
     """Identifies true wind speed zones within the entire forecast window."""
