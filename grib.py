@@ -206,6 +206,9 @@ def generate_reachable_graph(cache, safe_points_map, start_lat, start_lon, targe
             
             # Static snapshot for Dijkstra 2D
             weather = get_weather_from_cache(cache, curr_p['lat'], curr_p['lon'], start_time)
+            if weather is None:
+                adjacency_map[(r, c)] = []  # register as dead-end so adjacency_map is complete
+                continue
             u, v = weather['wind_u'], weather['wind_v']
             tws = np.sqrt(u**2 + v**2) * 1.94384
             twd = (math.degrees(math.atan2(-u, -v)) + 360) % 360
@@ -325,6 +328,8 @@ def find_shortest_path_dijkstra_3d(start_node, safe_points_map, target_lat, targ
         # Get dynamic weather for current node at current voyage time
         curr_voyage_time = start_time + timedelta(hours=curr_cost)
         weather = get_weather_from_cache(cache, curr_p['lat'], curr_p['lon'], curr_voyage_time)
+        if weather is None:
+            continue
         u, v = weather['wind_u'], weather['wind_v']
         tws = np.sqrt(u**2 + v**2) * 1.94384
         twd = (math.degrees(math.atan2(-u, -v)) + 360) % 360
@@ -396,6 +401,8 @@ def save_route_detailed_log(points, cache, filename, label):
             time = p.get('time', datetime.now())
             
             w = get_weather_from_cache(cache, lat, lon, time)
+            if w is None:
+                continue
             u, v = w['wind_u'], w['wind_v']
             tws = np.sqrt(u**2 + v**2) * 1.94384
             twd = (math.degrees(math.atan2(-u, -v)) + 360) % 360

@@ -327,6 +327,55 @@ class TestGenerateReachableGraph(object):
             content = f.read()
         assert "GRAPH CONSTRUCTION LOG" in content
 
+    def test_b23_none_weather_node_registered_as_dead_end(self, tmp_path, monkeypatch):
+        """B-23: when get_weather_from_cache returns None for the start node, the
+        start node must still be registered in adjacency_map as an empty list (dead-end).
+
+        Regression check: without the fix ('adjacency_map[(r,c)] = []' before 'continue'),
+        the start node is in reachable_nodes but absent from adjacency_map.
+        Any code that later does 'adj[start_idx]' raises KeyError.
+
+        We verify by asserting start_idx is in adj after the call.  With the bug
+        (just 'continue'), start_idx is present in 'nodes' but missing from 'adj'.
+        """
+        import grib as grib_mod
+
+        cache = make_weather_cache(
+            lats_1d=[53.0, 53.25, 53.5, 53.75, 54.0],
+            lons_1d=[2.0, 2.25, 2.5, 2.75],
+            u_speed=5.0, v_speed=0.0,
+        )
+        spm = identify_safe_sailing_areas(cache)
+        log = str(tmp_path / "graph_log.txt")
+
+        # Return None only for the start node's coordinates; let other nodes work.
+        # The start node is at lat≈53.0, lon≈2.0.
+        original_fn = grib_mod.get_weather_from_cache
+
+        def patched(c, lat, lon, t):
+            if abs(lat - 53.0) < 0.01 and abs(lon - 2.0) < 0.01:
+                return None
+            return original_fn(c, lat, lon, t)
+
+        monkeypatch.setattr(grib_mod, "get_weather_from_cache", patched)
+
+        nodes, adj, start_idx = generate_reachable_graph(
+            cache, spm,
+            start_lat=53.0, start_lon=2.0,
+            target_lat=54.75, target_lon=2.75,
+            start_time=cache["dates"][0],
+            log_file=log,
+        )
+
+        # start_idx was visited (weather=None path) — must be registered in adj
+        assert start_idx is not None, "start_idx must be found even when weather=None"
+        assert start_idx in nodes, "start_idx must be in reachable_nodes"
+        assert start_idx in adj, (
+            "B-23: start node with weather=None must appear in adjacency_map as "
+            "an empty list; without the fix it is absent and adj[start_idx] raises KeyError"
+        )
+        assert adj[start_idx] == [], "B-23: dead-end node must have empty edge list"
+
 
 # ---------------------------------------------------------------------------
 # Dijkstra 2D (REQ-06)
@@ -709,22 +758,25 @@ class TestDijkstra3DEdgeCases:
         self.start_node = min(self.spm.keys())
         self.t0 = self.cache["dates"][0]
 
-    def test_b14_none_weather_during_expansion_raises_typeerror(self):
-        """B-14: if get_weather_from_cache returns None during edge expansion,
-        the next line weather['wind_u'] raises TypeError."""
-        # Make a cache that returns None for all lookups by clearing dates
-        # so that the cache is falsy at the function level
-        bad_cache = {}  # falsy cache — get_weather_from_cache returns None immediately
-        # 3D Dijkstra's internal guard: `if not start_node or not safe_points_map`
-        # does NOT guard against bad_cache. The crash happens inside the expansion loop.
-        # However, with an empty cache dict, get_weather_from_cache returns None
-        # and then `weather['wind_u']` raises TypeError.
-        with pytest.raises(TypeError):
-            find_shortest_path_dijkstra_3d(
-                self.start_node, self.spm,
-                54.75, 2.75,
-                self.t0, bad_cache,
-            )
+    def test_b14_none_weather_during_expansion_skips_node(self):
+        """B-14 fixed: if get_weather_from_cache returns None during edge expansion,
+        the node is skipped (continue) instead of crashing with TypeError.
+        Uses a truthy cache with missing wind keys so get_weather_from_cache returns
+        None mid-traversal, exercising the `if weather is None: continue` fix site."""
+        # Build a cache that passes the `if not cache` guard but has no wind keys,
+        # so get_weather_from_cache returns None on every actual lookup.
+        cache_no_wind = {
+            "data": {self.t0: {}},   # valid timestep, but no wind component keys
+            "dates": [self.t0],
+            "lats": self.cache["lats"],
+            "lons": self.cache["lons"],
+        }
+        result, cost = find_shortest_path_dijkstra_3d(
+            self.start_node, self.spm,
+            54.75, 2.75,
+            self.t0, cache_no_wind,
+        )
+        assert isinstance(result, list), "Must return a list, not raise TypeError"
 
 
 @pytest.mark.slow
@@ -1562,6 +1614,27 @@ class TestPrintRouteSummaryGaps:
         assert "No data" in out
 
 
+class TestSaveRouteDetailedLogNoneWeather:
+    """Guard: save_route_detailed_log skips points where get_weather_from_cache returns None."""
+
+    def test_none_weather_point_is_skipped_without_crash(self, tmp_path, monkeypatch):
+        """After B-22 fix get_weather_from_cache can return None; log function must skip
+        those points rather than crashing with TypeError on w['wind_u']."""
+        import grib as grib_mod
+        monkeypatch.setattr(grib_mod, "get_weather_from_cache", lambda *a, **kw: None)
+        t0 = datetime(2026, 4, 20, 12, 0)
+        points = [
+            {"lat": 53.0, "lon": 2.0, "time": t0},
+            {"lat": 53.25, "lon": 2.25, "time": t0 + timedelta(hours=1)},
+        ]
+        log_path = str(tmp_path / "log.txt")
+        save_route_detailed_log(points, {}, log_path, "NoneWeather")
+        assert os.path.exists(log_path)
+        content = open(log_path).read()
+        data_rows = [l for l in content.splitlines() if l.strip().startswith("20")]
+        assert data_rows == [], "All points with None weather must be skipped"
+
+
 class TestSaveRouteDetailedLogGaps:
 
     def _make_points(self, n=3):
@@ -1667,8 +1740,9 @@ class TestPolarsGaps:
 
 
 class TestUKeyLowercaseFallback:
-    """B-22 related: identify_weather_danger_zones and identify_safe_sailing_areas
-    must handle both uppercase and lowercase U key from the GRIB file."""
+    """B-22: get_weather_from_cache must return wind data even when the cache
+    uses the lowercase key '10 metre u wind component' instead of the uppercase
+    '10 metre U wind component' produced by some GRIB readers."""
 
     def _make_lowercase_u_cache(self):
         cache = make_weather_cache(u_speed=5.0, v_speed=0.0)
@@ -1678,25 +1752,57 @@ class TestUKeyLowercaseFallback:
                 d["10 metre u wind component"] = d.pop("10 metre U wind component")
         return cache
 
-    def test_danger_zones_with_lowercase_u_key(self):
-        """identify_weather_danger_zones must work with lowercase '10 metre u wind component'."""
+    def test_b22_get_weather_from_cache_with_lowercase_u_key_returns_wind_data(self):
+        """Core B-22 regression: get_weather_from_cache must not return None when
+        the cache contains only lowercase '10 metre u wind component'.
+
+        With the bug (no fallback), get_weather_from_cache returns None because
+        the key lookup fails silently — u is None → early return None.
+        After the fix the function tries the lowercase key and returns a dict
+        with 'wind_u' and 'wind_v'.
+        """
+        from grib import get_weather_from_cache
+        cache = self._make_lowercase_u_cache()
+        t0 = cache["dates"][0]
+        lats = cache["lats"]
+        lons = cache["lons"]
+        # lats/lons are 2D numpy arrays; grab a scalar from the middle
+        mid_r = lats.shape[0] // 2
+        mid_c = lons.shape[1] // 2
+        lat = float(lats[mid_r, mid_c])
+        lon = float(lons[mid_r, mid_c])
+
+        result = get_weather_from_cache(cache, lat, lon, t0)
+
+        assert result is not None, (
+            "B-22: get_weather_from_cache returned None for lowercase U key — "
+            "the case-insensitive fallback is missing"
+        )
+        assert "wind_u" in result, "B-22: result must contain 'wind_u'"
+        assert "wind_v" in result, "B-22: result must contain 'wind_v'"
+
+    def test_danger_zones_with_lowercase_u_key_returns_list(self):
+        """identify_weather_danger_zones must work with lowercase '10 metre u wind component'
+        and return a non-None list (not silently empty due to skipped timesteps)."""
         cache = self._make_lowercase_u_cache()
         zones = identify_weather_danger_zones(cache, min_threshold=40.0)
         assert isinstance(zones, list)
+        # At u=5.0, v=0.0 → TWS ≈ 9.7 kt, well below 40 kt → no danger zones
+        # (any result is valid; the key point is it does not crash or return None)
 
-    def test_safe_areas_with_lowercase_u_key(self):
-        """identify_safe_sailing_areas must work with lowercase '10 metre u wind component'."""
-        cache = self._make_lowercase_u_cache()
-        spm = identify_safe_sailing_areas(cache, max_wind_threshold=30.0)
-        assert isinstance(spm, dict)
-        assert len(spm) == 16  # all 16 cells safe at ~9.7 kt
-
-    def test_safe_areas_uppercase_and_lowercase_give_same_result(self):
-        """Uppercase and lowercase U key must produce identical safe-area sets."""
+    def test_safe_areas_with_lowercase_u_key_consistent_with_uppercase(self):
+        """Uppercase and lowercase U key must produce identical safe-area sets.
+        Before B-22 fix: lowercase cache → spm is empty (all get_weather_from_cache
+        calls return None → no cells survive). After fix: same result as uppercase.
+        """
         cache_upper = make_weather_cache(u_speed=5.0, v_speed=0.0)
         cache_lower = self._make_lowercase_u_cache()
         spm_upper = identify_safe_sailing_areas(cache_upper, max_wind_threshold=30.0)
         spm_lower = identify_safe_sailing_areas(cache_lower, max_wind_threshold=30.0)
+        assert len(spm_lower) > 0, (
+            "B-22: lowercase U cache produces empty safe-area map — "
+            "get_weather_from_cache fallback not working"
+        )
         assert set(spm_upper.keys()) == set(spm_lower.keys())
 
     def test_b22_get_weather_from_cache_with_lowercase_u_key_returns_wind_data(self):
