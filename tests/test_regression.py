@@ -146,7 +146,6 @@ class TestBugFixes:
         assert len(path) >= 1
         assert cost >= 0.0
 
-    @pytest.mark.xfail(strict=True, reason="B-26: print_route_summary crashes with TypeError when time_hours is None")
     def test_b26_print_route_summary_none_time_hours_does_not_crash(self):
         """After B-26 is fixed, summary must print 'N/A' instead of crashing."""
         points = [

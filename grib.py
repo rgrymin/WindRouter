@@ -434,8 +434,9 @@ def print_route_summary(points, label, time_hours=None):
     if time_hours is None and 'time' in points[0] and 'time' in points[-1]:
         time_hours = (points[-1]['time'] - points[0]['time']).total_seconds() / 3600.0
     avg_speed = dist / time_hours if time_hours and time_hours > 0 else 0
+    time_str = f"{time_hours:.2f} h" if time_hours is not None else "N/A"
     print(f"--- SUMMARY: {label} ---")
-    print(f"Points: {len(points)} | Distance: {dist:.2f} nm | Time: {time_hours:.2f} h | Avg Speed: {avg_speed:.2f} kt\n")
+    print(f"Points: {len(points)} | Distance: {dist:.2f} nm | Time: {time_str} | Avg Speed: {avg_speed:.2f} kt\n")
 
 def save_graph_to_json(reachable_nodes, adjacency_map, safe_points_map, filename="sailing_graph.json"):
     """Saves the graph structure to a JSON file."""

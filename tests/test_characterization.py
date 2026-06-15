@@ -499,12 +499,12 @@ class TestDistanceCharacterization:
 # ---------------------------------------------------------------------------
 
 class TestPrintRouteSummaryCharacterization:
-    def test_b26_none_time_hours_raises_type_error(self):
-        """B-26: {time_hours:.2f} crashes with TypeError when time_hours is None.
-        Documents the bug — points have no 'time' key, no time_hours arg passed."""
+    def test_b26_none_time_hours_prints_na(self, capsys):
+        """B-26 fixed: print_route_summary prints 'N/A' instead of crashing when time_hours is None."""
         points = [
             {"lat": 53.0,  "lon": 2.0},
             {"lat": 53.25, "lon": 2.25},
         ]
-        with pytest.raises(TypeError):
-            print_route_summary(points, "Test")
+        print_route_summary(points, "Test")
+        out = capsys.readouterr().out
+        assert "N/A" in out
